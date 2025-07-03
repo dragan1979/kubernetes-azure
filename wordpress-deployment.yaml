@@ -1,0 +1,149 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wordpress-deployment
+  namespace: wordpress
+spec:
+  selector:
+    matchLabels:
+      app: wordpress-frontend
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: wordpress-frontend
+    spec:
+      # Set pod-level security context
+      securityContext:
+        fsGroup: 33    # Ensures volumes are owned by www-data group
+      
+      # Add init container to fix permissions
+      initContainers:
+      - name: fix-permissions
+        image: busybox:1.35
+        command: ['sh', '-c']
+        args:
+        - |
+          chown -R 33:33 /var/www/html/wp-content
+          chmod -R 755 /var/www/html/wp-content
+        volumeMounts:
+        - name: wordpress-persistent-storage
+          mountPath: /var/www/html/wp-content
+        securityContext:
+          runAsUser: 0  # Run as root to change ownership
+      
+      containers:
+      - name: wordpress
+        image: myregistry2025azurecr.azurecr.io/custom-wordpress:v1
+        ports:
+        - containerPort: 80
+        env:
+        - name: WORDPRESS_DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: wordpress-azure-mysql-secret
+              key: WORDPRESS_DB_HOST
+        - name: WORDPRESS_DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: wordpress-azure-mysql-secret
+              key: WORDPRESS_DB_USER
+        - name: WORDPRESS_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: wordpress-azure-mysql-secret
+              key: WORDPRESS_DB_PASSWORD
+        - name: WORDPRESS_DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: wordpress-azure-mysql-secret
+              key: WORDPRESS_DB_NAME
+        - name: WORDPRESS_DEBUG
+          value: "1"
+        # Add Apache ServerName to suppress warning
+        - name: APACHE_SERVERNAME
+          value: "wordpress.local"
+        # WordPress Authentication Keys
+        - name: WORDPRESS_AUTH_KEY
+          valueFrom:
+            secretKeyRef:
+              name: wordpress-auth-secret
+              key: WORDPRESS_AUTH_KEY
+        - name: WORDPRESS_SECURE_AUTH_KEY
+          valueFrom:
+            secretKeyRef:
+              name: wordpress-auth-secret
+              key: WORDPRESS_SECURE_AUTH_KEY
+        - name: WORDPRESS_LOGGED_IN_KEY
+          valueFrom:
+            secretKeyRef:
+              name: wordpress-auth-secret
+              key: WORDPRESS_LOGGED_IN_KEY
+        - name: WORDPRESS_NONCE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: wordpress-auth-secret
+              key: WORDPRESS_NONCE_KEY
+        - name: WORDPRESS_AUTH_SALT
+          valueFrom:
+            secretKeyRef:
+              name: wordpress-auth-secret
+              key: WORDPRESS_AUTH_SALT
+        - name: WORDPRESS_SECURE_AUTH_SALT
+          valueFrom:
+            secretKeyRef:
+              name: wordpress-auth-secret
+              key: WORDPRESS_SECURE_AUTH_SALT
+        - name: WORDPRESS_LOGGED_IN_SALT
+          valueFrom:
+            secretKeyRef:
+              name: wordpress-auth-secret
+              key: WORDPRESS_LOGGED_IN_SALT
+        - name: WORDPRESS_NONCE_SALT
+          valueFrom:
+            secretKeyRef:
+              name: wordpress-auth-secret
+              key: WORDPRESS_NONCE_SALT
+        # Add these WordPress-specific environment variables
+        - name: WORDPRESS_CONFIG_EXTRA
+          value: |
+            define('FS_METHOD', 'direct');
+            define('WP_DEBUG', true);
+            define('WP_DEBUG_LOG', true);
+            define('WP_MEMORY_LIMIT', '1024M');
+            define('WP_MAX_MEMORY_LIMIT', '1024M');
+            define('COOKIE_DOMAIN', $_SERVER['HTTP_HOST']);
+            define('WP_HOME', 'http://' . $_SERVER['HTTP_HOST']);
+            define('WP_SITEURL', 'http://' . $_SERVER['HTTP_HOST']);
+            ini_set('max_execution_time', 600);
+            ini_set('max_input_time', 600);
+            ini_set('session.gc_maxlifetime', 7200);
+            ini_set('session.cookie_lifetime', 7200);
+            ini_set('allow_url_fopen', 1);
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        volumeMounts:
+        - name: wordpress-persistent-storage
+          mountPath: /var/www/html/wp-content
+        - name: php-config-volume
+          mountPath: /usr/local/etc/php/conf.d/custom.ini
+          subPath: custom.ini
+          readOnly: true
+        # Remove container-level securityContext to allow Apache to start as root
+        # Apache will automatically switch to www-data for worker processes
+      
+      volumes:
+      - name: wordpress-persistent-storage
+        persistentVolumeClaim:
+          claimName: wordpress-content-pvc
+      - name: php-config-volume
+        configMap:
+          name: php-config
+          items:
+          - key: custom.ini
+            path: custom.ini

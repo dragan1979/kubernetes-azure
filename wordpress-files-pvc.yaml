@@ -1,0 +1,35 @@
+# Defines a Persistent Volume Claim for WordPress wp-content using Azure Files.
+# This allows multiple WordPress pods to share the same persistent storage.
+
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: azurefile-wordpress
+provisioner: file.csi.azure.com
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
+parameters:
+  skuName: Standard_LRS
+mountOptions:
+  - uid=33      # www-data user ID
+  - gid=33      # www-data group ID
+  - dir_mode=0755
+  - file_mode=0644
+  - mfsymlinks
+  - cache=strict
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wordpress-content-pvc # Name of the PVC
+  labels:
+    app: wordpress-frontend
+spec:
+  accessModes:
+    - ReadWriteMany # CRITICAL: Allows multiple pods to mount the same volume concurrently
+  storageClassName: azurefile-wordpress # Link to the StorageClass defined above
+  resources:
+    requests:
+      storage: 5Gi # Request 5 GB of storage for your wp-content (adjust as needed)
