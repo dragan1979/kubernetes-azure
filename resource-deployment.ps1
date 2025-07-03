@@ -261,11 +261,11 @@ if ($acrExists) {
 }
 
 az aks get-credentials --resource-group $RESOURCE_GROUP_NAME --name $AKS_CLUSTER_NAME --overwrite-existing
-
 docker build -t myregistry2025azurecr.azurecr.io/custom-wordpress:v1 .
 az acr login --name $ACR_NAME 
 docker push myregistry2025azurecr.azurecr.io/custom-wordpress:v1
-
+kubectl create ns wordpress
+kubectl create ns cert-manager
 
 
 # Get the resource ID of the AKS cluster's managed identity
